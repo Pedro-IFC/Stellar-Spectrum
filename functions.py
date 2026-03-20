@@ -2,64 +2,91 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
+def wavelength_to_rgb(wavelength, gamma=1.0): # Gamma 1.0 para cores mais saturadas
+    """
+    Converte um comprimento de onda (em nanômetros) para uma cor RGB.
+    """
+    wavelength = float(wavelength)
+    if 380 <= wavelength <= 440:
+        attenuation = 0.3 + 0.7 * (wavelength - 380) / (440 - 380)
+        R = ((-(wavelength - 440) / (440 - 380)) * attenuation) ** gamma
+        G = 0.0
+        B = (1.0 * attenuation) ** gamma
+    elif 440 <= wavelength <= 490:
+        R = 0.0
+        G = ((wavelength - 440) / (490 - 440)) ** gamma
+        B = 1.0
+    elif 490 <= wavelength <= 510:
+        R = 0.0
+        G = 1.0
+        B = (-(wavelength - 510) / (510 - 490)) ** gamma
+    elif 510 <= wavelength <= 580:
+        R = ((wavelength - 510) / (580 - 510)) ** gamma
+        G = 1.0
+        B = 0.0
+    elif 580 <= wavelength <= 645:
+        R = 1.0
+        G = (-(wavelength - 645) / (645 - 580)) ** gamma
+        B = 0.0
+    elif 645 <= wavelength <= 750:
+        attenuation = 0.3 + 0.7 * (750 - wavelength) / (750 - 645)
+        R = (1.0 * attenuation) ** gamma
+        G = 0.0
+        B = 0.0
+    else:
+        R = 0.0
+        G = 0.0
+        B = 0.0
+    return (R, G, B)
+
 def process_stellar_spectrum(image_path, p1, l1, p2, l2, output_name="spectrum_plot.png"):
-    """
-    image_path: Path to your Sirius photo
-    p1, p2: Pixel coordinates of your two calibration points (from the CFL bulb)
-    l1, l2: Known wavelengths for those points (e.g., 435.8 and 546.1)
-    """
-    # 1. Load and convert to Grayscale
+    # 1. Carregar imagem
     img = cv2.imread(image_path)
     if img is None:
-        print("Error: Image not found.")
+        print("Erro: Imagem não encontrada.")
         return
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 2. Select Region of Interest (ROI)
-    # We take a horizontal slice of the middle of the image
+    # 2. Selecionar ROI e Processar Intensidade
     h, w = gray.shape
     slice_height = 40 
     roi = gray[int(h/2) - slice_height : int(h/2) + slice_height, :]
-
-    # 3. Collapse 2D image into 1D Signal (Vertical Sum)
     intensity = np.sum(roi, axis=0)
-
-    # 4. Normalize (0 to 1 scale)
     intensity = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
 
-    # 5. Wavelength Calibration (Linear Regression: y = mx + c)
-    # We calculate the scale: nanometers per pixel
+    # 3. Calibração
     m = (l2 - l1) / (p2 - p1)
     c = l1 - m * p1
-    
     pixels = np.arange(w)
     wavelengths = m * pixels + c
 
-    # 6. Plotting
+    # 4. Plotting (Estilo Dark para cores fortes)
+    plt.style.use('dark_background') # Isso faz as cores "brilharem"
     plt.figure(figsize=(14, 6))
-    plt.plot(wavelengths, intensity, color='black', label='Observed Spectrum')
     
-    # Mark expected Balmer Lines for Sirius (A1V Star)
+    # Criar a barra de cores
+    spectrum_colors = [wavelength_to_rgb(wl) for wl in wavelengths]
+    background = np.array([spectrum_colors])
+    
+    # Aumentamos o alpha para 0.7 para cores mais densas
+    plt.imshow(background, extent=[wavelengths.min(), wavelengths.max(), 0, 1.1], 
+               aspect='auto', alpha=0.7)
+
+    # Plotar a linha (agora branca para contrastar com o fundo escuro)
+    plt.plot(wavelengths, intensity, color='white', linewidth=2, label='Intensidade')
+    
+    # Linhas de Balmer
     balmer_lines = {'H-alpha': 656.3, 'H-beta': 486.1, 'H-gamma': 434.0}
     for name, wave in balmer_lines.items():
-        plt.axvline(x=wave, color='red', linestyle='--', alpha=0.5)
-        plt.text(wave, 0.9, name, color='red', rotation=90)
+        plt.axvline(x=wave, color='cyan', linestyle=':', alpha=0.8)
+        plt.text(wave, 1.02, name, color='cyan', rotation=90, fontsize=10)
 
-    plt.title(f"Spectral Analysis of Sirius - {image_path}")
-    plt.xlabel("Wavelength (nm)")
-    plt.ylabel("Relative Intensity")
-    plt.xlim(400, 700) # Visible spectrum range
+    plt.title(f"Espectro de Sirius: {image_path}", fontsize=14, pad=20)
+    plt.xlabel("Comprimento de Onda (nm)")
+    plt.ylabel("Intensidade Relativa")
+    plt.xlim(400, 700)
     plt.ylim(0, 1.1)
-    plt.grid(True, which='both', linestyle=':', alpha=0.5)
-    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.2)
     
-    plt.savefig(output_name)
+    plt.savefig(output_name, dpi=300, bbox_inches='tight')
     plt.show()
-
-# --- HOW TO USE ---
-# 1. Identify your calibration pixels from your CFL bulb photo
-# Point 1: Mercury Blue Line (435.8 nm) at Pixel XXX
-# Point 2: Mercury Green Line (546.1 nm) at Pixel YYY
-
-# 2. Run the function (example values below)
-# process_stellar_spectrum('sirius_telescope.jpg', p1=420, l1=435.8, p2=815, l2=546.1)
